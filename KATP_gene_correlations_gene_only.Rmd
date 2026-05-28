@@ -1,11 +1,25 @@
 ---
 title: "KATP Gene Correlations (gene-level only, using existing transcript RDS)"
-output: html_notebook
+output:
+  html_document:
+    df_print: paged
 ---
 
 
-NB using LFS for the rds files:
+#Explanation
+This script will show KATP channel subunit correlations in our mouse skeletal muscle (AT) data. From this paper:
+[Staunton et al](https://link.springer.com/article/10.1186/s13395-021-00283-4)
+
+The data is freely available:
+[E-MTAB-10601](https://www.ebi.ac.uk/biostudies/arrayexpress/studies/E-MTAB-10601)
+
+In this script we use only control samples, but young and old.
+FULLRUN == TRUE would require the data downloaded and the gtfs installed in an equivilent location to our set up BUT we publish here as the default FULLRUN == FALSE so you can run it locally from Github with just the included rds files, Where preprocessing has already been done.
+
+NB using LFS for the large rds files:
 git lfs track "txi_transcripts.rds"
+
+GAI statement: This entire script was passed with Copilot to strip-out the unnecessary chunks we had in our original.
 
 ```{r setup}
 knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
@@ -48,7 +62,6 @@ When `FULLRUN <- FALSE`, this notebook reads only these cached RDS files:
 - `tx2gene_mouse_symbols.rds`
 - `txi_transcripts.rds`
 
-No new gene-level tximport object is created.
 
 ## Metadata
 
@@ -67,7 +80,7 @@ print(table(metadata$Age))
 ```
 
 ## Transcript-to-gene mapping with gene symbols
-
+For gene level analysis:
 Only the mapping needed to collapse transcript abundance to gene-level TPM is retained.
 
 ```{r tx2gene}
@@ -261,7 +274,7 @@ cor_long <- as.data.frame(as.table(katp_cor$r)) %>%
 ggplot(cor_long, aes(g1, g2, fill = r)) +
   geom_tile(colour = "grey90") +
   geom_text(aes(label = lab), size = 3.5) +
-  scale_fill_gradient2(low = "#3B4CC0", mid = "white", high = "#B40426", midpoint = 0, limits = c(-1, 1)) +
+  scale_fill_gradient2(low = "#3B4CC0", mid = "white", high = "#B40426", midpoint = 0.5, limits = c(0, 1)) +
   labs(
     title = "KATP subunit co-expression",
     subtitle = paste0(CORR_METHOD, " on log2(TPM+1), * p<0.05 ** p<0.01 *** p<0.001"),
