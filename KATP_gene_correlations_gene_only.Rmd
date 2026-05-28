@@ -1,13 +1,16 @@
 ---
-title: "KATP Gene Correlations (gene-level only, using existing transcript RDS)"
+title: "KATP Gene Correlations"
+knit: (function(inputFile, encoding) { rmarkdown::render(inputFile, encoding = encoding, output_file = "index.html", output_dir = "docs") })
 output:
   html_document:
-    df_print: paged
+    toc: true
+    theme: cosmo
 ---
 
 
 #Explanation
 This script will show KATP channel subunit correlations in our mouse skeletal muscle (AT) data. From this paper:
+
 [Staunton et al](https://link.springer.com/article/10.1186/s13395-021-00283-4)
 
 The data is freely available:
@@ -21,9 +24,20 @@ git lfs track "txi_transcripts.rds"
 
 GAI statement: This entire script was passed with Copilot to strip-out the unnecessary chunks we had in our original.
 
-```{r setup}
+```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
 
+
+knitr::opts_chunk$set(
+  echo = TRUE,
+  warning = FALSE,
+  message = FALSE
+)
+
+
+```
+
+```{r setup2, include=FALSE}
 FULLRUN <- FALSE
 METADATA_PATH <- "CazAT/metadataCazGemma.csv"
 BASE_PATH <- "/Volumes/traveldata/Maisey/CazAT/merged_fastq"
@@ -104,7 +118,7 @@ if (FULLRUN) {
 cat("Loaded mapping for", nrow(tx2gene), "transcripts\n")
 ```
 
-## Transcript quantifications (cached RDS)
+## Transcript quantifications
 
 ```{r transcript-import}
 if (FULLRUN) {
@@ -213,7 +227,7 @@ print(head(katp_mat))
 
 ## Pairwise gene correlations
 
-```{r correlations}
+```{r correlations, echo=FALSE}
 cor_with_p <- function(mat, method = "pearson") {
   v <- colnames(mat)
   n <- length(v)
@@ -246,7 +260,7 @@ print(signif(katp_cor$p, 3))
 
 ## Plot correlation matrix
 
-```{r plot-correlation}
+```{r plot-correlation, echo=FALSE}
 star <- function(p) {
   ifelse(
     is.na(p), "",
