@@ -3,6 +3,10 @@ title: "KATP Gene Correlations (gene-level only, using existing transcript RDS)"
 output: html_notebook
 ---
 
+
+NB using LFS for the rds files:
+git lfs track "txi_transcripts.rds"
+
 ```{r setup}
 knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
 
