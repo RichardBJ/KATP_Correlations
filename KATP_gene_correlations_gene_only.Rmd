@@ -1,19 +1,7 @@
 ---
-title: "KATP Gene Correlations (gene-level only)"
+title: "KATP Gene Correlations (gene-level only, using existing transcript RDS)"
 output: html_notebook
 ---
-
-#Explanation
-This script will show correlations between KATP subtypes in our skeletal muscle
-data.  Mouse AT young and old from this paper:
-
-And data is freely available here:
-
-Note that FULLRUN <- TRUE requires that the GTFs etc are installed on your
-system on the same location: but we also supply RDS files with prepopulated
-snapshots so you can run with FULLRUN <- FALSE standalone with just the 
-RDS files here within.
-
 
 ```{r setup}
 knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
@@ -23,16 +11,23 @@ METADATA_PATH <- "CazAT/metadataCazGemma.csv"
 BASE_PATH <- "/Volumes/traveldata/Maisey/CazAT/merged_fastq"
 MOUSE_GTF <- "/Volumes/BigDisk/refgenie/genomes/alias/mm10/ensembl_gtf/default/mm10.gtf.gz"
 
+# Cached RDS files used when FULLRUN == FALSE
+METADATA_RDS <- "metadata_gene_corr.rds"
+TX2GENE_SYMBOLS_RDS <- "tx2gene_mouse_symbols.rds"
+TXI_TRANSCRIPTS_RDS <- "txi_transcripts.rds"
+
+
 # channel subunit -> MGI symbol
 KATP_GENES  <- c("Kcnj8", "Kcnj11", "Abcc8", "Abcc9")
 KATP_LABELS <- c(Kcnj8 = "Kir6.1", Kcnj11 = "Kir6.2", Abcc8 = "SUR1", Abcc9 = "SUR2")
 CORR_METHOD <- "pearson"
+
 ```
 
 ## Libraries
-
 ```{r libraries}
 library(tximport)
+library(tximeta)
 library(GenomicFeatures)
 library(AnnotationDbi)
 library(dplyr)
@@ -41,21 +36,35 @@ library(ggplot2)
 library(viridis)
 ```
 
-## Sample metadata
+## Cached-object strategy
+
+When `FULLRUN <- FALSE`, this notebook reads only these cached RDS files:
+
+- `metadata_gene_corr.rds`
+- `tx2gene_mouse_symbols.rds`
+- `txi_transcripts.rds`
+
+No new gene-level tximport object is created.
+
+## Metadata
 
 ```{r metadata}
-
-metadata <- read.csv(METADATA_PATH, stringsAsFactors = FALSE)
-rownames(metadata) <- metadata$sample_id
-metadata$Age <- factor(metadata$Age, levels = c("Young", "Old"))
+if (FULLRUN) {
+  metadata <- read.csv(METADATA_PATH, stringsAsFactors = FALSE)
+  rownames(metadata) <- metadata$sample_id
+  metadata$Age <- factor(metadata$Age, levels = c("Young", "Old"))
+  saveRDS(metadata, METADATA_RDS)
+} else {
+  metadata <- readRDS(METADATA_RDS)
+}
 
 cat("Loaded", nrow(metadata), "samples\n")
 print(table(metadata$Age))
 ```
 
-## Transcript-to-gene mapping
+## Transcript-to-gene mapping with gene symbols
 
-This notebook keeps only the transcript-to-gene mapping required to summarise Salmon quantifications at the **gene** level.
+Only the mapping needed to collapse transcript abundance to gene-level TPM is retained.
 
 ```{r tx2gene}
 if (FULLRUN) {
@@ -65,98 +74,101 @@ if (FULLRUN) {
   tx2gene <- AnnotationDbi::select(txdb, keys = k, columns = "GENEID", keytype = "TXNAME")
   tx2gene$TXNAME_clean <- sub("\\..*", "", tx2gene$TXNAME)
   tx2gene$GENEID_clean <- sub("\\..*", "", tx2gene$GENEID)
-  saveRDS(tx2gene, "tx2gene_mouse.rds")
-} else {
-  tx2gene <- readRDS("tx2gene_mouse.rds")
-}
 
-if (FULLRUN) {
-  # If you need to rebuild symbol annotation, use your preferred annotation source here.
-  # This notebook expects a cached object with gene symbols already added.
-  stop("Set FULLRUN <- FALSE unless you also rebuild tx2gene_mouse_symbols.rds")
+  # Restore your preferred symbol annotation step here if rebuilding from scratch,
+  # then save the gene-symbol-annotated object.
+  stop("Add/restore your preferred gene-symbol annotation step here, then save to TX2GENE_SYMBOLS_RDS")
+
+  saveRDS(tx2gene, TX2GENE_SYMBOLS_RDS)
 } else {
-  tx2gene <- readRDS("tx2gene_mouse_symbols.rds")
+  tx2gene <- readRDS(TX2GENE_SYMBOLS_RDS)
 }
 
 cat("Loaded mapping for", nrow(tx2gene), "transcripts\n")
 ```
 
-## Quant files
+## Transcript quantifications (cached RDS)
 
-```{r quant-files}
-quant_files <- sapply(metadata$sample_id, function(sid) {
-  sample_base <- sub("_R1\\.fastq\\.gz$", "", sid)
-  sample_base <- tolower(sample_base)
-  quant_dir <- file.path(BASE_PATH, paste0("quants_", sample_base))
-  quant_file <- file.path(quant_dir, "quant.sf")
-  if (file.exists(quant_file)) {
-    quant_file
-  } else {
-    warning(paste("Missing quant file for:", sid))
-    NA_character_
-  }
-})
-
-names(quant_files) <- metadata$sample_id
-valid_samples <- names(quant_files)[!is.na(quant_files)]
-metadata <- metadata[valid_samples, , drop = FALSE]
-quant_files <- quant_files[valid_samples]
-
-cat("Found", length(quant_files), "quant files\n")
-```
-
-## Import gene-level abundance
-
-```{r gene-import}
-# tximport needs transcript and gene columns only
-# use the cleaned IDs so ignoreTxVersion = TRUE works consistently
-
-tx2gene_import <- tx2gene %>%
-  dplyr::select(TXNAME_clean, GENEID_clean) %>%
-  distinct() %>%
-  dplyr::rename(tx = TXNAME_clean, gene = GENEID_clean)
-
+```{r transcript-import}
 if (FULLRUN) {
-  txi_gene <- tximport(
+  quant_files <- sapply(metadata$sample_id, function(sid) {
+    sample_base <- sub("_R1\\.fastq\\.gz$", "", sid)
+    
+    sample_base <- tolower(sample_base)
+    quant_dir <- file.path(BASE_PATH, paste0("quants_", sample_base))
+    quant_file <- file.path(quant_dir, "quant.sf")
+    if (file.exists(quant_file)) {
+      quant_file
+    } else {
+      warning(paste("Missing quant file for:", sid))
+      NA_character_
+    }
+  })
+
+  names(quant_files) <- metadata$sample_id
+  valid_samples <- names(quant_files)[!is.na(quant_files)]
+  metadata <- metadata[valid_samples, , drop = FALSE]
+  saveRDS(metadata, METADATA_RDS)
+  quant_files <- quant_files[valid_samples]
+
+  cat("Found", length(quant_files), "quant files\n")
+
+  txi <- tximport(
     quant_files,
     type = "salmon",
-    tx2gene = tx2gene_import,
+    txOut = TRUE,
     ignoreTxVersion = TRUE,
-    countsFromAbundance = "no"
+    dropInfReps = FALSE
   )
-  saveRDS(txi_gene, "txi_mouse.rds")
+
+  saveRDS(txi, TXI_TRANSCRIPTS_RDS)
 } else {
-  txi_gene <- readRDS("txi_mouse.rds")
+  txi <- readRDS(TXI_TRANSCRIPTS_RDS)
 }
 
-cat("Imported", nrow(txi_gene$counts), "genes across", ncol(txi_gene$counts), "samples\n")
+cat("Imported", nrow(txi$counts), "transcripts across", ncol(txi$counts), "samples\n")
 ```
 
-## Gene annotation
+## Transcript annotation (for collapsing to genes)
 
-```{r gene-annotation}
-gene_annotation <- tx2gene %>%
-  dplyr::select(GENEID_clean, gene_symbol) %>%
-  distinct() %>%
-  dplyr::rename(gene_id = GENEID_clean, symbol = gene_symbol)
+```{r transcript-annotation}
+tx_ids <- rownames(txi$counts)
+tx_ids_clean <- sub("\\..*", "", tx_ids)
 
-gene_annotation <- gene_annotation[match(rownames(txi_gene$counts), gene_annotation$gene_id), , drop = FALSE]
+tx_annotation <- data.frame(
+  transcript_id = tx_ids,
+  transcript_id_clean = tx_ids_clean,
+  stringsAsFactors = FALSE
+) %>%
+  left_join(
+    tx2gene %>%
+      dplyr::select(TXNAME_clean, GENEID_clean, gene_symbol) %>%
+      distinct(),
+    by = c("transcript_id_clean" = "TXNAME_clean")
+  ) %>%
+  dplyr::rename(
+    gene_id = GENEID_clean,
+    symbol = gene_symbol
+  )
 
-cat("Genes with symbols:", sum(!is.na(gene_annotation$symbol) & gene_annotation$symbol != ""), "\n")
-cat("Genes without symbols:", sum(is.na(gene_annotation$symbol) | gene_annotation$symbol == ""), "\n")
+cat("Annotated", nrow(tx_annotation), "transcripts\n")
+cat("Transcripts with gene symbols:", sum(!is.na(tx_annotation$symbol)), "\n")
+cat("Unknown transcripts:", sum(is.na(tx_annotation$symbol)), "\n")
 ```
 
 ## KATP gene-level TPM
 
 ```{r katp-gene-tpm}
-gene_tpm <- as.data.frame(t(txi_gene$abundance)) %>%
+expr_long <- as.data.frame(t(txi$abundance)) %>%
   mutate(sample_id = rownames(.)) %>%
-  pivot_longer(cols = -sample_id, names_to = "gene_id", values_to = "TPM") %>%
+  pivot_longer(cols = -sample_id, names_to = "transcript_id", values_to = "TPM") %>%
   left_join(metadata %>% dplyr::select(sample_id, Age), by = "sample_id") %>%
-  left_join(gene_annotation, by = "gene_id")
+  left_join(tx_annotation %>% dplyr::select(transcript_id, gene_id, symbol), by = "transcript_id")
 
-katp_gene_tpm <- gene_tpm %>%
+katp_gene_tpm <- expr_long %>%
   dplyr::filter(symbol %in% KATP_GENES) %>%
+  group_by(sample_id, Age, gene_id, symbol) %>%
+  summarise(TPM = sum(TPM), .groups = "drop") %>%
   mutate(channel = KATP_LABELS[symbol])
 
 print(katp_gene_tpm %>% dplyr::select(sample_id, Age, gene_id, symbol, channel, TPM) %>% head())
@@ -175,7 +187,6 @@ katp_wide$sample_id <- NULL
 
 katp_mat <- log2(as.matrix(katp_wide) + 1)
 
-# keep a sensible subunit order
 want <- c("Kir6.1", "Kir6.2", "SUR1", "SUR2")
 katp_mat <- katp_mat[, intersect(want, colnames(katp_mat)), drop = FALSE]
 
