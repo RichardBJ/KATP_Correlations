@@ -298,5 +298,7 @@ ggplot(cor_long, aes(g1, g2, fill = r)) +
   theme_bw() +
   theme(panel.grid = element_blank())
 
-ggsave("katp_correlation_matrix_gene_level.png", width = 6, height = 5, dpi = 300)
+ggsave("katp_correlation_matrix_gene_level.tiff", 
+       width = 6, height = 5, 
+       compression = "lzw", dpi = 600)
 ```
